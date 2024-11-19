@@ -145,8 +145,7 @@ export interface ResourceRef<T> extends WritableResource<T> {
  *
  * @experimental
  */
-export interface ResourceLoaderParams<R> {
-  request: Exclude<NoInfer<R>, undefined>;
+export interface ResourceLoaderParams {
   abortSignal: AbortSignal;
   previous: {
     status: ResourceStatus;
@@ -158,26 +157,18 @@ export interface ResourceLoaderParams<R> {
  *
  * @experimental
  */
-export type ResourceLoader<T, R> = (param: ResourceLoaderParams<R>) => PromiseLike<T>;
+export type ResourceLoader<T> = (params: ResourceLoaderParams) => PromiseLike<T>;
 
 /**
  * Options to the `resource` function, for creating a resource.
  *
  * @experimental
  */
-export interface ResourceOptions<T, R> {
-  /**
-   * A reactive function which determines the request to be made. Whenever the request changes, the
-   * loader will be triggered to fetch a new value for the resource.
-   *
-   * If a request function isn't provided, the loader won't rerun unless the resource is reloaded.
-   */
-  request?: () => R;
-
+export interface ResourceOptions<T> {
   /**
    * Loading function which returns a `Promise` of the resource's value for a given request.
    */
-  loader: ResourceLoader<T, R>;
+  loader: ResourceLoader<T>;
 
   /**
    * Equality function used to compare the return value of the loader.

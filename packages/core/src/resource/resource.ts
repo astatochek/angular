@@ -36,10 +36,9 @@ import {DestroyRef} from '../linker';
  *
  * @experimental
  */
-export function resource<T, R>(options: ResourceOptions<T, R>): ResourceRef<T> {
+export function resource<T>(options: ResourceOptions<T>): ResourceRef<T> {
   options?.injector || assertInInjectionContext(resource);
-  const request = (options.request ?? (() => null)) as () => R;
-  return new WritableResourceImpl<T, R>(request, options.loader, options.equal, options.injector);
+  return new WritableResourceImpl<T>(options.loader, options.equal, options.injector);
 }
 
 /**
@@ -130,8 +129,8 @@ abstract class BaseWritableResource<T> implements WritableResource<T> {
   public abstract reload(): boolean;
 }
 
-class WritableResourceImpl<T, R> extends BaseWritableResource<T> implements ResourceRef<T> {
-  private readonly request: Signal<{request: R; reload: WritableSignal<number>}>;
+class WritableResourceImpl<T> extends BaseWritableResource<T> implements ResourceRef<T> {
+  private readonly request: Signal<{reload: WritableSignal<number>}>;
   private readonly pendingTasks: PendingTasks;
   private readonly effectRef: EffectRef;
 
@@ -139,8 +138,7 @@ class WritableResourceImpl<T, R> extends BaseWritableResource<T> implements Reso
   private resolvePendingTask: (() => void) | undefined = undefined;
 
   constructor(
-    requestFn: () => R,
-    private readonly loaderFn: ResourceLoader<T, R>,
+    private readonly loaderFn: ResourceLoader<T>,
     equal: ValueEqualityFn<T> | undefined,
     injector: Injector | undefined,
   ) {
@@ -149,16 +147,17 @@ class WritableResourceImpl<T, R> extends BaseWritableResource<T> implements Reso
     this.pendingTasks = injector.get(PendingTasks);
 
     this.request = computed(() => ({
-      // The current request as defined for this resource.
-      request: requestFn(),
-
       // A counter signal which increments from 0, re-initialized for each request (similar to the
       // `linkedSignal` pattern). A value other than 0 indicates a refresh operation.
       reload: signal(0),
     }));
 
     // The actual data-fetching effect.
-    this.effectRef = effect(this.loadEffect.bind(this), {injector, manualCleanup: true});
+    this.effectRef = effect(this.loadEffect.bind(this), {
+      injector,
+      manualCleanup: true,
+      allowSignalWrites: true,
+    });
 
     // Cancel any pending request when the resource itself is destroyed.
     injector.get(DestroyRef).onDestroy(() => this.destroy());
@@ -194,11 +193,6 @@ class WritableResourceImpl<T, R> extends BaseWritableResource<T> implements Reso
     this.abortInProgressLoad();
 
     const request = this.request();
-    if (request.request === undefined) {
-      // An undefined request means there's nothing to load.
-      this.setValueState(ResourceStatus.Idle);
-      return;
-    }
 
     // Subscribing here allows us to refresh the load later by updating the refresh signal. At the
     // same time, we update the status according to whether we're reloading or loading.
@@ -221,18 +215,15 @@ class WritableResourceImpl<T, R> extends BaseWritableResource<T> implements Reso
 
     const {signal: abortSignal} = (this.pendingController = new AbortController());
     try {
-      // The actual loading is run through `untracked` - only the request side of `resource` is
-      // reactive. This avoids any confusion with signals tracking or not tracking depending on
-      // which side of the `await` they are.
-      const result = await untracked(() =>
-        this.loaderFn({
-          abortSignal,
-          request: request.request as Exclude<R, undefined>,
-          previous: {
-            status: previousStatus,
-          },
-        }),
-      );
+      const req = this.loaderFn({
+        abortSignal,
+        previous: {
+          status: previousStatus,
+        },
+      });
+
+      const result = await req;
+
       if (abortSignal.aborted) {
         // This load operation was cancelled.
         return;

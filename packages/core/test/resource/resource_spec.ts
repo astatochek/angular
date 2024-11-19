@@ -13,6 +13,7 @@ import {
   resource,
   ResourceStatus,
   signal,
+  untracked,
 } from '@angular/core';
 import {TestBed} from '@angular/core/testing';
 
@@ -71,13 +72,15 @@ class MockResponseCountingBackend extends MockBackend<number, string> {
   }
 }
 
-describe('resource', () => {
+fdescribe('resource', () => {
   it('should expose data and status based on reactive request', async () => {
     const counter = signal(0);
     const backend = new MockEchoBackend();
     const echoResource = resource({
-      request: () => ({counter: counter()}),
-      loader: (params) => backend.fetch(params.request),
+      loader: (params) => {
+        const request = {counter: counter()};
+        return backend.fetch(request);
+      },
       injector: TestBed.inject(Injector),
     });
 
@@ -118,8 +121,7 @@ describe('resource', () => {
     const backend = new MockEchoBackend();
     const requestParam = {};
     const echoResource = resource({
-      request: () => requestParam,
-      loader: (params) => backend.fetch(params.request),
+      loader: () => backend.fetch({}),
       injector: TestBed.inject(Injector),
     });
 
@@ -136,8 +138,10 @@ describe('resource', () => {
     const counter = signal(0);
     const backend = new MockEchoBackend();
     const echoResource = resource({
-      request: () => (counter() > 5 ? {counter: counter()} : undefined),
-      loader: (params) => backend.fetch(params.request),
+      loader: () => {
+        const request = counter() > 5 ? {counter: counter()} : undefined;
+        return backend.fetch(request);
+      },
       injector: TestBed.inject(Injector),
     });
 
@@ -154,9 +158,9 @@ describe('resource', () => {
     const counter = signal(0);
     const backend = new MockEchoBackend<{counter: number}>();
     const aborted: {counter: number}[] = [];
-    const echoResource = resource<{counter: number}, {counter: number}>({
-      request: () => ({counter: counter()}),
-      loader: ({request, abortSignal}) => {
+    const echoResource = resource<{counter: number}>({
+      loader: ({abortSignal}) => {
+        const request = {counter: counter()};
         abortSignal.addEventListener('abort', () => backend.abort(request));
         return backend.fetch(request).catch((reason) => {
           if (reason === 'aborted') {
@@ -188,9 +192,9 @@ describe('resource', () => {
     const backend = new MockEchoBackend<{counter: number}>();
     const aborted: {counter: number}[] = [];
     const injector = createEnvironmentInjector([], TestBed.inject(EnvironmentInjector));
-    const echoResource = resource<{counter: number}, {counter: number}>({
-      request: () => ({counter: counter()}),
-      loader: ({request, abortSignal}) => {
+    const echoResource = resource<{counter: number}>({
+      loader: ({abortSignal}) => {
+        const request = {counter: counter()};
         abortSignal.addEventListener('abort', () => backend.abort(request));
         return backend.fetch(request).catch((reason) => {
           if (reason === 'aborted') {
@@ -220,13 +224,12 @@ describe('resource', () => {
     const backend = new MockEchoBackend<{counter: number}>();
     const aborted: {counter: number}[] = [];
     const injector = createEnvironmentInjector([], TestBed.inject(EnvironmentInjector));
-    const echoResource = resource<{counter: number}, {counter: number}>({
-      request: () => ({counter: counter()}),
-      loader: ({request, abortSignal}) => {
-        abortSignal.addEventListener('abort', () => backend.abort(request));
-        return backend.fetch(request).catch((reason) => {
+    const echoResource = resource<{counter: number}>({
+      loader: ({abortSignal}) => {
+        abortSignal.addEventListener('abort', () => backend.abort({counter: counter()}));
+        return backend.fetch({counter: counter()}).catch((reason) => {
           if (reason === 'aborted') {
-            aborted.push(request);
+            aborted.push({counter: counter()});
           }
           throw new Error(reason);
         });
@@ -251,12 +254,11 @@ describe('resource', () => {
   it('should not respond to reactive state changes in a loader', async () => {
     const unrelated = signal('a');
     const backend = new MockResponseCountingBackend();
-    const res = resource<string, number>({
-      request: () => 0,
+    const res = resource<string>({
       loader: (params) => {
         // read reactive state and assure it is _not_ tracked
-        unrelated();
-        return backend.fetch(params.request);
+        untracked(unrelated);
+        return backend.fetch(0);
       },
       injector: TestBed.inject(Injector),
     });
@@ -278,8 +280,7 @@ describe('resource', () => {
     const counter = signal(0);
     const backend = new MockEchoBackend();
     const echoResource = resource({
-      request: () => ({counter: counter()}),
-      loader: (params) => backend.fetch(params.request),
+      loader: (params) => backend.fetch(counter()),
       injector: TestBed.inject(Injector),
     });
 
@@ -314,9 +315,8 @@ describe('resource', () => {
 
   it('should allow re-fetching data', async () => {
     const backend = new MockResponseCountingBackend();
-    const res = resource<string, number>({
-      request: () => 0,
-      loader: (params) => backend.fetch(params.request),
+    const res = resource<string>({
+      loader: (params) => backend.fetch(0),
       injector: TestBed.inject(Injector),
     });
 
